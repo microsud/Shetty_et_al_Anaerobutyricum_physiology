@@ -1,0 +1,467 @@
+---
+title: "CarbonSource"
+author: "Sudarshan A. Shetty,"
+date: "24 July 2019"
+output: html_document
+---
+
+# Global proteomic profiling at different growth stages of Anaerobutyricum soehngenii (DSM17630)
+
+
+**Load libraries**
+
+```{r, message=FALSE, warning=FALSE}
+#https://bioconductor.org/packages/devel/bioc/vignettes/DEP/inst/doc/DEP.html
+#http://bioconductor.org/packages/release/bioc/vignettes/MSnbase/inst/doc/MSnbase-demo.html
+#source("https://bioconductor.org/biocLite.R")
+#biocLite("DEP")
+
+library("DEP")
+library("ggplot2")
+library("dplyr")
+library(SummarizedExperiment)
+library(ggpubr)
+#dir.create("carbonsourceL27_Outputs")
+```
+
+
+Load the data recieved from MaxQuant.  
+
+## Read L2-7
+
+```{r}
+
+data <- read.csv("three_carbon.csv", header = T, 
+                              row.names = 1)
+
+#head(data)
+
+#dim(data)
+#colnames(data)
+
+# Filter out contaminants
+
+data <- filter(data, Reverse != "+", Potential.contaminant != "+")
+data$Gene.names %>% duplicated() %>% any()
+#head(data)
+LFQ_columns <- grep("LFQ.", colnames(data)) 
+
+# Read sample information
+sam_dat <- read.csv("sample_data_carbon.csv", header = T,
+                    row.names = 1, check.names = F)
+rownames(sam_dat)
+#data$id
+# Focus here on Anaerobutyricum soehngenii strain L2-7
+
+# Make data compatible with DEP package
+sam_dat.l2 <- subset(sam_dat, Organism == "L2-7")
+experimental_design <- sam_dat.l2
+
+data$Gene.names <- gsub("EHL_","EHLA_", data$Gene.names)
+data <- tidyr::separate(data, Gene.names, c("Gene.names", "Product name"), sep = " ", remove = TRUE)
+
+data_unique <- make_unique(data, "Gene.names", "Fasta.headers", delim = ";")
+
+sam_dat.l2$condition <- sam_dat.l2$Condition
+sam_dat.l2$label <- rownames(sam_dat.l2)
+sam_dat.l2$replicate <- c("1","2","3","1","2","3","1","2","3")
+LFQ_columns <- grep("LFQ.", colnames(data_unique))
+data_se <- make_se(data_unique, LFQ_columns, sam_dat.l2)
+
+ # get LFQ column numbers
+data_se_parsed <- make_se_parse(data_unique, LFQ_columns)
+
+```
+
+## Check for overlap of protein identifications between samples
+
+```{r}
+
+overlap <- plot_frequency(data_se)
+overlap$data
+
+```
+We have 225 unique protiens. While majority are detected in all 9 samples.  
+
+## Pre-processing and QC   
+
+We will use a cut-off so as to have only those proteins that are detected in 2 out of three replicates for each condition.  
+
+```{r}
+
+# Filter for proteins that are identified in all replicates of at least one condition
+#data_filt <- filter_missval(data_se, thr = 0)
+
+# Less stringent filtering:
+# Filter for proteins that are identified in 2 out of 3 replicates of at least one condition
+data_filt <- filter_missval(data_se, thr = 1)
+```
+
+Number of identified proteins per sample 
+
+```{r}
+
+dir.create("results")
+p.num.prot <- plot_numbers(data_filt)
+
+p.num.prot <- p.num.prot + geom_text(aes(label = sprintf("%.1f", sum), y= sum),  
+                                     vjust = 3) 
+p.num.prot <- p.num.prot + scale_fill_manual("Carbon Source", 
+                                               values = c("#fbb4ae", 
+                                                          "#b3cde3", 
+                                                          "#ccebc5"))
+
+print(p.num.prot)
+p.num.prot$data
+ggsave("./results/Number of identified proteins per sample.pdf")
+ggsave("./results/Number of identified proteins per sample.png")
+ggsave("./results/Number of identified proteins per sample.tiff")
+#plot_numbers(data_filt2)
+```
+
+Protein coverage in all samples  
+
+```{r, warning=FALSE, message=FALSE}
+
+p <- plot_coverage(data_filt) + scale_fill_brewer(palette = "Paired")
+p + geom_text(aes(label=Freq), vjust=1.6, color="white")
+
+ggarrange(p.num.prot, p, labels = c("A", "B"))
+
+ggsave("./results/Protein coverage.pdf", width = 12, height = 6)
+```
+
+We see that there is almost even coverage in all samples. 
+
+
+Tranformation of LFQ values to stabilize the variance before we calcualte differential abundance.  
+
+```{r}
+
+data_norm <- normalize_vsn(data_filt)
+
+p <- meanSdPlot(data_norm) 
+
+
+p.norm <- plot_normalization(data_filt, data_norm)
+p.norm
+ggsave("./results/Normalization.pdf")
+```
+
+Check for missing values
+
+```{r}
+
+p.miss.val <- plot_missval(data_filt)
+
+```
+
+```{r}
+# Plot intensity distributions and cumulative fraction of proteins with and without missing values
+plot_detect(data_filt)
+
+```
+
+Seems there are proteins that are low abundant in some samples are missing in others. We will impute the missing values.
+
+Note from MSnbase:  
+MinProb: Performs the imputation of left-censored missing data by random draws from a Gaussian distribution centred to a minimal value. Considering an expression data matrix with n samples and p features, for each sample, the mean value of the Gaussian distribution is set to a minimal observed value in that sample. The minimal value observed is estimated as being the q-th quantile (default q = 0.01) of the observed values in that sample. The standard deviation is estimated as the median of the feature standard deviations. Note that when estimating the standard deviation of the Gaussian distribution, only the peptides/proteins which present more than 50% recorded values are considered. 
+
+```{r, warning=FALSE, message=FALSE}
+
+set.seed(2156)
+# All possible imputation methods are printed in an error, if an invalid function name is given.
+# Impute missing data using random draws from a Gaussian distribution centered around a minimal value (for MNAR)
+data_imp <- impute(data_norm, fun = "MinProb", q = 0.01)
+# 0.6969534
+
+```
+
+```{r}
+# Plot intensity distributions before and after imputation
+plot_imputation(data_norm, data_imp)
+
+```
+
+
+```{r}
+# Differential enrichment analysis  based on linear models and empherical Bayes statistics
+
+# Test all possible comparisons of samples
+data_diff_all_contrasts <- test_diff(data_imp, type = "all")
+```
+
+## identify significant proteins
+```{r}
+
+dep <- add_rejections(data_diff_all_contrasts, alpha = 0.05, lfc = 1.5)
+
+```
+
+
+```{r}
+
+plot_pca(dep, x = 1, y = 2, n = 600, point_size = 4)
+
+p.pca <- plot_pca(dep, x = 1, y = 2, n = nrow(dep@assays), point_size = 4, label=F)
+p.pca <- p.pca + ggtitle("L2-7") + scale_color_manual("Carbon Soruce", 
+                                               values = c("#fbb4ae", 
+                                                          "#b3cde3", 
+                                                          "#ccebc5"))
+p.pca
+
+ggsave("./results/PCA plot L2-7.pdf")
+
+```
+
+## Correlation between samples
+```{r}
+
+library(grid)
+cor_matrix <- plot_cor(dep, significant = F, lower = 0, upper = 1, 
+         pal = "GnBu",
+         indicate = c("condition", "replicate"), plot = F)
+write.csv(cor_matrix, "plot_cor_text.csv")
+pdf("./results/correlation plot L2-7.pdf")
+plot_cor(dep, significant = F, lower = 0, upper = 1, 
+         pal = "GnBu",
+         indicate = c("condition", "replicate"))
+dev.off()
+```
+
+```{r}
+
+pdf("./results/L2_Heatmap_comparisons.pdf", height = 12, width = 4)
+p.heat <- plot_heatmap(dep, type = "contrast", kmeans = F, 
+             col_limit = 4, show_row_names = T,
+             indicate = c("condition", "replicate"), show_row_dend= T,
+             row_dend_side = "right", width = 0.5, gap = unit(1, "mm")
+             )
+dev.off()
+
+p.heat1 <- plot_heatmap(dep, type = "contrast", kmeans = TRUE, 
+             k = 3, col_limit = 10, show_row_names = FALSE)
+
+pdf("./results/L2_Heatmap_spearman.pdf", height = 12, width = 6)
+plot_heatmap(dep, type = "centered", kmeans = F, 
+             col_limit = 4, show_row_names = T,
+             indicate = c("condition", "replicate"), clustering_distance = "spearman")
+dev.off()
+
+
+```
+
+
+```{r}
+#p <- plot_cond(dep, plot = T) + scale_fill_brewer(palette = "Paired")
+#tax <- plot_cond(dep, plot = F) + scale_fill_brewer(palette = "Paired")
+
+#p$counts
+```
+
+
+## Plot differential protiens  Lactate_vs_Sorbitol, 
+
+```{r}
+
+source("./custome_plots/plot_volcano_custom.R")
+
+remove_grids <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                        panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+p.Lactate_vs_Sorbitol <- plot_volcano_custom(dep, contrast = "Lactate_vs_Sorbitol", 
+                                      label_size = 2, add_names = TRUE) + remove_grids 
+
+ggsave("./pairwise_results/Lactate_vs_Sorbitol_Volacno_comparison_L2_7.pdf", height = 4, width = 6)
+
+    
+```
+
+```{r}
+plot_single(dep, proteins = c("EHLA_0973","EHLA_0974","EHLA_0975", "EHLA_0976", "EHLA_0977", "EHLA_0978", "EHLA_0979"), type = "centered") +  scale_color_manual("Replicate", values = c("#e41a1c", "#377eb8", 
+                                                          "#4daf4a"))
+
+ggsave("./pairwise_results/lct_genes_comparison_L2_7.pdf", height = 6, width = 8)
+```
+
+## Plot differential protiens Lactate_vs_Sucrose, 
+
+```{r}
+
+p.Lactate_vs_Sucrose <- plot_volcano_custom(dep, contrast = "Lactate_vs_Sucrose", 
+                                     label_size = 2, add_names = TRUE) + remove_grids
+ggsave("./pairwise_results/Lactate_vs_Sucrose_Volacno_comparison_L2_7_lacSor.pdf", height = 4, width = 6)
+```
+
+
+## Plot differential protiens Sorbitol_vs_Sucrose
+
+```{r}
+
+p.Sorbitol_vs_Sucrose <- plot_volcano_custom(dep, contrast = "Sorbitol_vs_Sucrose", 
+                                      label_size = 2, add_names = TRUE) + remove_grids
+ggsave("./pairwise_results/Sorbitol_vs_Sucrose_Volacno_comparison_L2_7_lacSor.pdf", height = 4, width = 8)
+
+ggsave("./pairwise_results/Sorbitol_vs_Sucrose_Volacno_comparison_L2_7_lacSor.tiff", height = 4, width = 6)
+#p.Sorbitol_vs_Sucrose$data
+
+#p.Sorbitol_vs_Sucrose <- plot_volcano_custom(dep, contrast = "Sorbitol_vs_Sucrose", label_size = 1, add_names = TRUE) + remove_grids
+```
+
+```{r}
+
+
+p.vol.all <- ggpubr::ggarrange(p.Lactate_vs_Sorbitol, 
+                               p.Lactate_vs_Sucrose, 
+                               p.Sorbitol_vs_Sucrose, ncol=1, nrow=3)
+p.vol.all
+
+ggsave("./pairwise_results/All three_volacno_comparison_L2_7.pdf", height = 10, width = 8)
+ggsave("./pairwise_results/All three_volacno_comparison_L2_7.tiff", height = 10, width = 8)
+ggsave("./pairwise_results/All three_volacno_comparison_L2_7.png", height = 10, width = 10)
+
+
+```
+
+
+Get the significant results and store them as csv file.  
+```{r}
+
+data_results <- get_results(dep)
+write.csv(data_results, "./results/L2_comparison_all.csv")
+# Number of significant proteins
+data_results %>% filter(significant) %>% nrow()
+colnames(data_results)
+
+data_results_sig <- subset(data_results, significant==TRUE)
+nrow(data_results_sig)
+write.csv(data_results_sig, "./results/L2_comparison_significant.csv")
+
+```
+
+
+Seprate pairwise  
+
+```{r}
+
+dir.create("pairwise_results")
+
+
+sorbitol_sucrose <- data_results_sig[, c("name", "ID", "Sorbitol_vs_Sucrose_p.val", "Sorbitol_vs_Sucrose_p.adj", "Sorbitol_vs_Sucrose_significant", "Sorbitol_vs_Sucrose_ratio")]
+
+lactate_sucrose <- data_results_sig[, c("name", "ID", "Lactate_vs_Sucrose_p.val", "Lactate_vs_Sucrose_p.adj", "Lactate_vs_Sucrose_significant", "Lactate_vs_Sucrose_ratio")]
+
+lactate_sorbitol <- data_results_sig[, c("name", "ID", "Lactate_vs_Sorbitol_p.val", "Lactate_vs_Sorbitol_p.adj", "Lactate_vs_Sorbitol_significant", "Lactate_vs_Sorbitol_ratio")]
+
+
+```
+
+
+
+```{r}
+
+dim(sorbitol_sucrose)
+sorbitol_sucrose <- subset(sorbitol_sucrose, Sorbitol_vs_Sucrose_significant == TRUE)
+
+lactate_sucrose <- subset(lactate_sucrose, Lactate_vs_Sucrose_significant == TRUE)
+dim(lactate_sucrose)
+lactate_sorbitol <- subset(lactate_sorbitol, Lactate_vs_Sorbitol_significant == TRUE)
+dim(lactate_sorbitol)
+
+```
+
+```{r}
+head(lactate_sucrose)
+head(lactate_sorbitol)
+
+lactate_sorbitol$Lactate_vs_Sorbitol_ratio
+lactate_sucrose$Lactate_vs_Sucrose_ratio
+
+#intersect(lactate_sucrose$name == lactate_sorbitol$name)
+
+```
+
+
+```{r}
+lactate_sorbitol$name
+```
+
+```{r}
+match(lactate_sorbitol$name,lactate_sucrose$name)
+```
+
+```{r}
+match(lactate_sucrose$name,lactate_sorbitol$name)
+```
+
+
+```{r}
+colnames(sorbitol_sucrose)
+
+sorbitol_sucrose$Regulation <- ifelse(sorbitol_sucrose[, abs(6)] > 1 , "Upregulated", "Downregulated")
+
+write.csv(sorbitol_sucrose, "./pairwise_results/sorbitol_sucrose.csv")
+
+```
+
+
+```{r}
+
+lactate_sucrose$Regulation <- ifelse(lactate_sucrose[, abs(6)] > 1 , "Upregulated", "Downregulated")
+write.csv(lactate_sucrose, "./pairwise_results/lactate_sucrose.csv")
+
+```
+
+
+```{r}
+
+lactate_sorbitol$Regulation <- ifelse(lactate_sorbitol[, abs(6)] > 1 , "Upregulated", "Downregulated")
+write.csv(lactate_sorbitol, "./pairwise_results/lactate_sorbitol.csv")
+
+```
+
+
+```{r}
+#head(data_results)
+
+foldch <- tidyr::separate(data_results_sig, ID, c("ID"), sep = " ", remove = TRUE)
+#foldch <- foldch[, -2]
+head(foldch)
+
+
+foldch$Regulation <- ifelse(foldch[, abs(13)] > 1 , "Upregulated", "Downregulated")
+
+write.csv(foldch, "./pairwise_results/Lactate_vs_Sorbitol.csv")
+
+p <- plot_single(dep, proteins = c("EHLA_0973", "EHLA_0974", "EHLA_0975", "EHLA_0976", "EHLA_0977", "EHLA_0978"), type = "centered")
+
+p$data
+
+plot_heatmap(dep, type = "contrast", kmeans = TRUE, 
+             k = 6, col_limit = 10, show_row_names = FALSE)
+
+plot_cor(dep, significant = TRUE, lower = 0, upper = 1, pal = "Blues")
+
+pdf("./output/L2_Heatmap.pdf", height = 10, width = 8)
+plot_heatmap(dep, type = "centered", show_row_names = T,
+             kmeans = F, show_row_dend = F,
+             indicate = c("condition", "replicate"))
+dev.off()
+
+png("./carbonsourceL27_Outputs/L2_Heatmap.png", height = 4, width = 6)
+plot_heatmap(dep, type = "centered", kmeans = TRUE, 
+             k = 4, col_limit = 4, show_row_names = T,
+             indicate = c("condition", "replicate"))
+dev.off()
+```
+
+
+
+Check for overlap between conditions
+
+```{r}
+plot_cond(dep)
+```
+
+
+

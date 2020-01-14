@@ -1,5 +1,5 @@
 
-**IMP NOTE:** This repository contains codes to reproduce the proteomics data analysis for the physiology study of *Anaerobutyricum* and related species
+**IMP NOTE:** This repository contains codes to reproduce the proteomics data analysis for the physiology study of *Anaerobutyricum* and related species. This is work in progress and will upload final files once analysis is completed.   
 
 
 Study title: Proteomics comparison of *Anaerobutyricum* and related species   

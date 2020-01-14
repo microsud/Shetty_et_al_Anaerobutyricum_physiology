@@ -24,7 +24,7 @@ project folder:
 Structure:  
 Shetty_et_al_Anaerobutyricum_physiology/ # Main repository  
                      |---- carbonsource_l2.RMD # Codes for analysis of proteomics data.   
-                     |---- sample_data_carbon.csv # Codes for analysis of Bacterial data.   
+                     |---- sample_data_carbon.csv # Sample information (c-source).   
                      |---- three_carbon.csv # Filtered Filtered proteinGroups normalized (LFQ) intensities. 
                      |---- Anaerobutyricum Proteomics.Rproj Rproject
 

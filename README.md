@@ -5,11 +5,12 @@
 Study title: Proteomics comparison of *Anaerobutyricum* and related species   
 ---------------------------------------------------------------------------------  
 
-**Authors:** Sudarshan A. Shetty<sup>1</sup>, Sjef Boeren<sup>2</sup>, Hauke Smidt<sup>1</sup>, Willem M. de Vos <sup>1</sup>,<sup>3</sup><sup>*</sup>   
+**Authors:** Sudarshan A. Shetty<sup>1</sup>, Sjef Boeren<sup>2</sup>, Thi Phuong Nam Bui <sup>1,3</sup>, Hauke Smidt<sup>1</sup>, Willem M. de Vos <sup>1</sup>,<sup>3</sup><sup>*</sup>   
 **Affiliations:**   
 <sup>1</sup>Laboratory of Microbiology, Wageningen University & Research, Stippeneng 4, 6708 WE Wageningen, The Netherlands.   
 <sup>2</sup>Laboratory of Biochemistry, Wageningen University & Research, Stippeneng 4, 6708 WE, Wageningen, The Netherlands.  
-<sup>3</sup>Human Microbiome Research Program, Faculty of Medicine, University of Helsinki, Helsinki, Finland.    
+<sup>3</sup>Caelus Pharmaceuticals, 3474 KG Zegveld, The Netherlands  
+<sup>4</sup>Human Microbiome Research Program, Faculty of Medicine, University of Helsinki, Helsinki, Finland.    
 
 
 <sup>*</sup>Correspondence: Willem M. de Vos (willem.devos[at]wur.nl)   

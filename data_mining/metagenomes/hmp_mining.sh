@@ -134,7 +134,7 @@ done
 
 ####################################################################################################
 # STEP 1f - BOWTIE mapping
-#	Dependencies:	bowtie2
+#	Dependencies:	bowtie2; htseq
 #				
 ####################################################################################################
 #NOTE: copy the bowtieDB folder from metatranscriptomics mining folder into $INPUT_DIR/raw/
